@@ -36,6 +36,80 @@ import org.sonar.wsclient.jsonsimple.JSONValue;
 
 public class ProfileGenerator {
 
+  public static final String JAVA = "java";
+  public static final String CLOUD_QUALITY_PROFILE = "cloudrules";
+  public static final String TAGS = "cloud";
+  public static final String REPOSITORY = "ctp-java-rules";
+
+  static void generateCloudRuleProfile(Orchestrator orchestrator, Set<String> excludedRules, Set<String> enabledRules,Set<String> activatedRuleKeys){
+    try {
+      StringBuilder sb = new StringBuilder()
+              .append("<profile>")
+              .append("<name>").append(CLOUD_QUALITY_PROFILE).append("</name>")
+              .append("<language>").append(JAVA).append("</language>")
+              .append("<alerts>")
+              .append("<alert>")
+              .append("<metric>blocker_violations</metric>")
+              .append("<operator>&gt;</operator>")
+              .append("<warning></warning>")
+              .append("<error>0</error>")
+              .append("</alert>")
+              .append("<alert>")
+              .append("<metric>info_violations</metric>")
+              .append("<operator>&gt;</operator>")
+              .append("<warning></warning>")
+              .append("<error>0</error>")
+              .append("</alert>")
+              .append("</alerts>")
+              .append("<rules>");
+
+      List<String> ruleKeys = Lists.newArrayList();
+
+      String json = new HttpRequestFactory(orchestrator.getServer().getUrl())
+              .get("/api/rules/search", ImmutableMap.<String, Object>of("languages", JAVA, "tags", TAGS));
+
+      List<Map> jsonRules = (List<Map>) ((Map) JSONValue.parse(json)).get("rules");
+      for (Map jsonRule : jsonRules) {
+        String key = (String) jsonRule.get("key");
+        ruleKeys.add(key.split(":")[1]);
+      }
+
+      for (String key : ruleKeys) {
+        if (excludedRules.contains(key) || (!enabledRules.isEmpty() && !enabledRules.contains(key))) {
+          continue;
+        }
+        activatedRuleKeys.add(key);
+        sb.append("<rule>")
+                .append("<repositoryKey>").append(REPOSITORY).append("</repositoryKey>")
+                .append("<key>").append(key).append("</key>")
+                .append("<priority>INFO</priority>");
+      /*if (rulesParameters.containsKey(key)) {
+        sb.append("<parameters>");
+        for (Map.Entry<String, String> parameter : rulesParameters.get(key).entrySet()) {
+          sb.append("<parameter>")
+                  .append("<key>").append(parameter.getKey()).append("</key>")
+                  .append("<value>").append(parameter.getValue()).append("</value>")
+                  .append("</parameter>");
+        }
+        sb.append("</parameters>");
+      }*/
+        sb.append("</rule>");
+      }
+
+      sb.append("</rules>")
+              .append("</profile>");
+
+      File file = File.createTempFile("profile", ".xml");
+      Files.write(sb, file, StandardCharsets.UTF_8);
+      orchestrator.getServer().restoreProfile(FileLocation.of(file));
+      file.delete();
+    } catch (IOException e){
+      throw Throwables.propagate(e);
+    }
+  }
+
+
+
   static void generate(Orchestrator orchestrator, String language, String repositoryKey, ImmutableMap<String, ImmutableMap<String, String>> rulesParameters,
     Set<String> excluded, Set<String> subsetOfEnabledRules, Set<String> activatedRuleKeys) {
     try {
